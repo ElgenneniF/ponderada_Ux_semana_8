@@ -82,19 +82,88 @@ function drawLine(x1, y1, x2, y2) {
         .on("end", () => line.remove());
 }
 
-// Detecção do movimento do mouse e desenhar as linhas de "rastro"
+const cor_do_rastro = "#add8e6"
+
 svg.on("mousemove", function(event) {
     const [mx, my] = d3.pointer(event);
 
-    const verticalOffset = Math.random() * 100 - 50;
-
-    for (let i = 0; i < 20; i++) {
-        const offsetX = Math.random() * 100 - 50;
-        drawLine(mx + offsetX - 10, my + verticalOffset, mx + offsetX + 10, my + verticalOffset);
-    }
-
+    // Aplicar a repulsão nos pontos
     applyRepulsion(mx, my);
+
+    // Calcular ângulo do movimento do mouse
+    const angle = Math.atan2(my - lastMouseY, mx - lastMouseX);
+    const offset = 15; // Distância entre as linhas paralelas
+    const arcOffset = 25; // Distância do arco à frente do mouse
+
+    // Posições das linhas paralelas
+    const x1a = lastMouseX + offset * Math.cos(angle + Math.PI / 2);
+    const y1a = lastMouseY + offset * Math.sin(angle + Math.PI / 2);
+    const x2a = mx + offset * Math.cos(angle + Math.PI / 2);
+    const y2a = my + offset * Math.sin(angle + Math.PI / 2);
+
+    const x1b = lastMouseX - offset * Math.cos(angle + Math.PI / 2);
+    const y1b = lastMouseY - offset * Math.sin(angle + Math.PI / 2);
+    const x2b = mx - offset * Math.cos(angle + Math.PI / 2);
+    const y2b = my - offset * Math.sin(angle + Math.PI / 2);
+
+    // Posição do arco à frente do mouse
+    const arcX = mx + arcOffset * Math.cos(angle);
+    const arcY = my + arcOffset * Math.sin(angle);
+
+    // Desenhar as duas linhas paralelas
+    drawLine(x1a, y1a, x2a, y2a);
+    drawLine(x1b, y1b, x2b, y2b);
+
+    // Criar o arco à frente do mouse
+    drawArc(arcX, arcY, x2a, y2a, x2b, y2b);
+
+    // Atualizar a última posição do mouse
+    lastMouseX = mx;
+    lastMouseY = my;
 });
+
+// Variáveis para armazenar a última posição do mouse
+let lastMouseX = width / 2;
+let lastMouseY = height / 2;
+
+// Ajuste na função drawLine para linhas mais grossas
+function drawLine(x1, y1, x2, y2) {
+    const line = svg.append("line")
+        .attr("x1", x1)
+        .attr("y1", y1)
+        .attr("x2", x1)
+        .attr("y2", y1)
+        .attr("stroke", cor_do_rastro)
+        .attr("stroke-width", 5) 
+        .attr("stroke-linecap", "round")
+        .attr("opacity", 0.8);
+
+    line.transition()
+        .duration(200)
+        .ease(d3.easeSinInOut)
+        .attr("stroke-width", 5)
+        .attr("x2", x2)
+        .attr("y2", y2)
+        .on("end", () => line.remove());
+}
+
+// Função para desenhar o arco na frente do mouse
+function drawArc(arcX, arcY, x1, y1, x2, y2) {
+    const arcPath = `M ${x1} ${y1} Q ${arcX} ${arcY} ${x2} ${y2}`;
+
+    const arc = svg.append("path")
+        .attr("d", arcPath)
+        .attr("fill", "none")
+        .attr("stroke", cor_do_rastro)
+        .attr("stroke-width", 5) 
+        .attr("opacity", 0.8);
+
+    arc.transition()
+        .duration(50)
+        .ease(d3.easeSinInOut)
+        .attr("opacity", 0.6)
+        .on("end", () => arc.remove()); // Remove o arco depois da animação
+}
 
 // Zoom/Pan
 const zoom = d3.zoom()
