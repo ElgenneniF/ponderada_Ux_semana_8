@@ -10,6 +10,23 @@ const svg = d3.select("body")
 
 const liliesGroup = svg.append("g").attr("class", "lilies-group");
 const effectsGroup = svg.append("g").attr("class", "effects-group");
+const hitboxGroup = svg.append("g").attr("class", "hitbox-group");
+
+// Controle de toggle para hitboxes
+let showHitboxes = true;
+const toggleButton = d3.select("body")
+    .append("button")
+    .style("position", "fixed")
+    .style("top", "10px")
+    .style("left", "10px")
+    .style("z-index", "1000")
+    .style("padding", "5px")
+    .text("Ocultar Hitboxes")
+    .on("click", function() {
+        showHitboxes = !showHitboxes;
+        hitboxGroup.style("visibility", showHitboxes ? "visible" : "hidden");
+        d3.select(this).text(showHitboxes ? "Ocultar Hitboxes" : "Mostrar Hitboxes");
+    });
 
 const numPoints = 30;
 const points = Array.from({ length: numPoints }, () => ({
@@ -17,23 +34,128 @@ const points = Array.from({ length: numPoints }, () => ({
     y: Math.random() * height,
     size: 20 + Math.random() * 10,
     vx: Math.random() * 0.5 - 0.25,
-    vy: Math.random() * 0.5 - 0.25
+    vy: Math.random() * 0.5 - 0.25,
+    hitboxSize: 0, // Será calculado com base no SVG
+    id: Math.random().toString(36).substr(2, 9),
+    repulsionRadius: 0 // Raio de repulsão gradual
 }));
+
+// Função para obter o tamanho do SVG (maior dimensão)
+function getSVGSize(svgElement) {
+    // Crie um container temporário para o SVG
+    const tempContainer = document.createElement("div");
+    tempContainer.style.position = "absolute";
+    tempContainer.style.visibility = "hidden";
+    tempContainer.style.pointerEvents = "none";
+    document.body.appendChild(tempContainer);
+    
+    // Clone o SVG e adicione ao container
+    const clone = svgElement.cloneNode(true);
+    tempContainer.appendChild(clone);
+    
+    // Obtenha todas as partes visíveis do SVG
+    const allElements = tempContainer.querySelectorAll("path, circle, rect, ellipse, line, polyline, polygon");
+    
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    
+    // Para cada elemento, calcule as dimensões
+    allElements.forEach(el => {
+        const bbox = el.getBBox();
+        minX = Math.min(minX, bbox.x);
+        minY = Math.min(minY, bbox.y);
+        maxX = Math.max(maxX, bbox.x + bbox.width);
+        maxY = Math.max(maxY, bbox.y + bbox.height);
+    });
+    
+    // Remover o container temporário
+    document.body.removeChild(tempContainer);
+    
+    // Se não houver elementos, retornar um tamanho padrão
+    if (minX === Infinity) {
+        return 50;
+    }
+    
+    const width = maxX - minX;
+    const height = maxY - minY;
+    
+    // Retornar o maior valor entre largura e altura para um quadrado que contém o SVG
+    return Math.max(width, height);
+}
 
 d3.xml("floreplanta.svg").then((floreplanta) => {
     const floreplantaNode = floreplanta.documentElement;
+    
+    // Obter o tamanho do SVG para criar hitboxes quadradas
+    const svgSize = getSVGSize(floreplantaNode);
+    console.log("SVG Size:", svgSize);
+    
+    // Atualizar os pontos com o tamanho calculado
+    points.forEach(point => {
+        point.hitboxSize = svgSize;
+        // Definir um raio de repulsão maior do que a hitbox para efeito gradual
+        point.repulsionRadius = svgSize * (point.size / 50) * 2.5;
+    });
 
     const lilies = liliesGroup.selectAll(".vitoria-regia")
         .data(points)
         .enter()
         .append("g")
         .attr("class", "vitoria-regia")
-        .attr("transform", d => `translate(${d.x}, ${d.y}) scale(${d.size / 50})`);
+        .attr("transform", d => `translate(${d.x}, ${d.y}) scale(${d.size / 50})`)
+        .attr("data-id", d => d.id);
 
     lilies.each(function() {
         this.appendChild(floreplantaNode.cloneNode(true));
     });
+    
+    // Criar as hitboxes quadradas
+    hitboxGroup.selectAll(".hitbox")
+        .data(points)
+        .enter()
+        .append("rect")
+        .attr("class", "hitbox")
+        .attr("data-id", d => d.id)
+        .attr("fill", "rgba(255, 0, 0, 0.2)")
+        .attr("stroke", "red")
+        .attr("stroke-dasharray", "5,5")
+        .attr("stroke-width", 2);
+    
+    // Visualização opcional do raio de repulsão
+    hitboxGroup.selectAll(".repulsion-radius")
+        .data(points)
+        .enter()
+        .append("circle")
+        .attr("class", "repulsion-radius")
+        .attr("data-id", d => d.id)
+        .attr("fill", "none")
+        .attr("stroke", "rgba(0, 255, 255, 0.3)")
+        .attr("stroke-dasharray", "3,3")
+        .attr("stroke-width", 1)
+        .attr("cx", d => d.x + (d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))/2)
+        .attr("cy", d => d.y + (d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))/2)
+        .attr("r", d => d.repulsionRadius);
+    
+    // Atualizar posição e tamanho das hitboxes
+    updateHitboxes();
 });
+
+// Função para atualizar a posição e tamanho das hitboxes e raios de repulsão
+function updateHitboxes() {
+    // Atualizar hitboxes
+    hitboxGroup.selectAll(".hitbox")
+        .data(points)
+        .attr("x", d => d.x)
+        .attr("y", d => d.y)
+        .attr("width", d => d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))
+        .attr("height", d => d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0));
+    
+    // Atualizar raios de repulsão
+    hitboxGroup.selectAll(".repulsion-radius")
+        .data(points)
+        .attr("cx", d => d.x + (d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))/2)
+        .attr("cy", d => d.y + (d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))/2)
+        .attr("r", d => d.repulsionRadius * (window.hitboxScaleFactor || 1.0));
+}
 
 const simulation = d3.forceSimulation(points)
     .force("collision", d3.forceCollide()
@@ -43,12 +165,21 @@ const simulation = d3.forceSimulation(points)
         points.forEach(p => {
             p.x += p.vx;
             p.y += p.vy;
+            
+            // Aplicar atrito
+            p.vx *= 0.98;
+            p.vy *= 0.98;
+            
+            // Limitar a posição
             p.x = Math.max(p.size, Math.min(width - p.size, p.x));
             p.y = Math.max(p.size, Math.min(height - p.size, p.y));
         });
 
         liliesGroup.selectAll(".vitoria-regia")
             .attr("transform", d => `translate(${d.x}, ${d.y}) scale(${d.size / 50})`);
+            
+        // Atualizar posição das hitboxes
+        updateHitboxes();
     });
 
 let lastMouseX = width / 2;
@@ -58,18 +189,65 @@ svg.on("mousemove", function(event) {
     const [mx, my] = d3.pointer(event);
 
     points.forEach(point => {
-        const dx = point.x - mx;
-        const dy = point.y - my;
+        // Calcular o centro da hitbox
+        const hitboxWidth = point.hitboxSize * (point.size / 50) * (window.hitboxScaleFactor || 1.0);
+        const hitboxCenterX = point.x + hitboxWidth/2;
+        const hitboxCenterY = point.y + hitboxWidth/2;
+        
+        // Calcular distância do mouse ao centro da hitbox
+        const dx = hitboxCenterX - mx;
+        const dy = hitboxCenterY - my;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        const maxDistance = point.size * 2;
-
-        if (dist < maxDistance) {
-            const force = Math.min(1000 / (dist * dist), 2);
+        
+        // Repulsão gradual com base na distância
+        const repulsionRadius = point.repulsionRadius * (window.hitboxScaleFactor || 1.0);
+        
+        if (dist < repulsionRadius) {
+            // Verificação de hitbox
+            const isInsideHitbox = mx >= point.x && mx <= point.x + hitboxWidth && 
+                                   my >= point.y && my <= point.y + hitboxWidth;
+            
+            // Calcular o fator de repulsão baseado na proximidade
+            // Quanto mais próximo do centro, mais forte a repulsão
+            const repulsionFactor = 1 - (dist / repulsionRadius);
             const angle = Math.atan2(dy, dx);
+            
+            // Força base
+            let force;
+            
+            if (isInsideHitbox) {
+                // Força máxima se estiver dentro da hitbox
+                force = 8;
+                
+                // Indicação visual
+                hitboxGroup.select(`.hitbox[data-id="${point.id}"]`)
+                    .attr("fill", "rgba(255, 255, 0, 0.3)")
+                    .transition()
+                    .duration(500)
+                    .attr("fill", "rgba(255, 0, 0, 0.2)");
+            } else {
+                // Força gradual baseada na proximidade
+                force = 5 * Math.pow(repulsionFactor, 2); // O quadrado dá uma curva não-linear para repulsão
+            }
+            
+            // Aplicar a força com suavização
             point.vx += force * Math.cos(angle) * 0.1;
             point.vy += force * Math.sin(angle) * 0.1;
+            
+            // Efeito visual para o raio de repulsão (opcional)
+            if (repulsionFactor > 0.1) {
+                hitboxGroup.select(`.repulsion-radius[data-id="${point.id}"]`)
+                    .attr("stroke", `rgba(0, 255, 255, ${repulsionFactor * 0.5})`)
+                    .attr("stroke-width", 1 + repulsionFactor);
+            }
+        } else {
+            // Resetar efeito visual para o raio de repulsão
+            hitboxGroup.select(`.repulsion-radius[data-id="${point.id}"]`)
+                .attr("stroke", "rgba(0, 255, 255, 0.3)")
+                .attr("stroke-width", 1);
         }
     });
+    
     simulation.alpha(0.3).restart();
 
     const angle = Math.atan2(my - lastMouseY, mx - lastMouseX);
@@ -102,6 +280,7 @@ const zoom = d3.zoom()
     .on("zoom", function(event) {
         liliesGroup.attr("transform", event.transform);
         effectsGroup.attr("transform", event.transform);
+        hitboxGroup.attr("transform", event.transform);
     });
 
 svg.call(zoom);
@@ -142,3 +321,90 @@ function drawArc(arcX, arcY, x1, y1, x2, y2) {
         .attr("opacity", 0.6)
         .on("end", () => arc.remove());
 }
+
+// Adicionar controle para mostrar/ocultar raios de repulsão
+const repulsionToggleButton = d3.select("body")
+    .append("button")
+    .style("position", "fixed")
+    .style("top", "10px")
+    .style("left", "150px")
+    .style("z-index", "1000")
+    .style("padding", "5px")
+    .text("Ocultar Raios de Repulsão")
+    .on("click", function() {
+        const repulsionVisible = hitboxGroup.selectAll(".repulsion-radius").style("visibility") !== "hidden";
+        hitboxGroup.selectAll(".repulsion-radius").style("visibility", repulsionVisible ? "hidden" : "visible");
+        d3.select(this).text(repulsionVisible ? "Mostrar Raios de Repulsão" : "Ocultar Raios de Repulsão");
+    });
+
+// Controle deslizante para ajuste da escala da hitbox
+const controlsDiv = d3.select("body")
+    .append("div")
+    .style("position", "fixed")
+    .style("bottom", "10px")
+    .style("left", "10px")
+    .style("background", "rgba(255, 255, 255, 0.8)")
+    .style("padding", "10px")
+    .style("border-radius", "5px");
+
+controlsDiv.append("div")
+    .text("Fator de Escala da Hitbox: ");
+
+controlsDiv.append("input")
+    .attr("type", "range")
+    .attr("min", "0.5")
+    .attr("max", "2")
+    .attr("step", "0.1")
+    .attr("value", "1.0")
+    .style("width", "150px")
+    .on("input", function() {
+        const factor = parseFloat(this.value);
+        controlsDiv.select("span").text(factor.toFixed(1));
+        
+        // Salvar o fator de escala para uso no cálculo das hitboxes
+        window.hitboxScaleFactor = factor;
+        
+        // Atualizar tamanho das hitboxes
+        updateHitboxes();
+    });
+
+window.hitboxScaleFactor = 1.0; // Fator de escala inicial
+
+controlsDiv.append("span")
+    .text("1.0");
+
+// Adicionar controle deslizante para ajuste do raio de repulsão
+const repulsionControlsDiv = d3.select("body")
+    .append("div")
+    .style("position", "fixed")
+    .style("bottom", "60px")
+    .style("left", "10px")
+    .style("background", "rgba(255, 255, 255, 0.8)")
+    .style("padding", "10px")
+    .style("border-radius", "5px");
+
+repulsionControlsDiv.append("div")
+    .text("Fator do Raio de Repulsão: ");
+
+repulsionControlsDiv.append("input")
+    .attr("type", "range")
+    .attr("min", "1")
+    .attr("max", "5")
+    .attr("step", "0.5")
+    .attr("value", "2.5")
+    .style("width", "150px")
+    .on("input", function() {
+        const factor = parseFloat(this.value);
+        repulsionControlsDiv.select("span").text(factor.toFixed(1));
+        
+        // Atualizar o raio de repulsão para todos os pontos
+        points.forEach(point => {
+            point.repulsionRadius = point.hitboxSize * (point.size / 50) * factor;
+        });
+        
+        // Atualizar a visualização
+        updateHitboxes();
+    });
+
+repulsionControlsDiv.append("span")
+    .text("2.5");
