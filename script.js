@@ -40,6 +40,17 @@ const points = Array.from({ length: numPoints }, () => ({
     repulsionRadius: 0 // Raio de repulsão gradual
 }));
 
+// Função para criar e atualizar o quadtree
+function createQuadtree(points) {
+    return d3.quadtree()
+        .x(d => d.x + (d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))/2)
+        .y(d => d.y + (d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))/2)
+        .addAll(points);
+}
+
+// Inicializar quadtree (será atualizado após o carregamento dos SVGs)
+let quadtree = createQuadtree(points);
+
 // Função para obter o tamanho do SVG (maior dimensão)
 function getSVGSize(svgElement) {
     // Crie um container temporário para o SVG
@@ -81,6 +92,34 @@ function getSVGSize(svgElement) {
     // Retornar o maior valor entre largura e altura para um quadrado que contém o SVG
     return Math.max(width, height);
 }
+
+// Função para carregar posições a partir de um CSV
+function loadPositionsFromCSV() {
+    d3.csv("lily_positions.csv").then(data => {
+        // Processar dados do CSV e atualizar os pontos
+        data.forEach((d, i) => {
+            if (i < points.length) {
+                points[i].x = +d.x * width;  // Converter para número e escalar para a largura da janela
+                points[i].y = +d.y * height; // Converter para número e escalar para a altura da janela
+                points[i].size = +d.size || (20 + Math.random() * 10); // Usar o tamanho do CSV ou gerar um
+            }
+        });
+        
+        // Atualizar visualização
+        updateLilies();
+        updateHitboxes();
+        
+        // Reconstruir quadtree com novas posições
+        quadtree = createQuadtree(points);
+        
+        console.log("Posições carregadas do CSV");
+    }).catch(error => {
+        console.error("Erro ao carregar CSV, usando posições aleatórias:", error);
+    });
+}
+
+// Tentar carregar CSV ao iniciar
+loadPositionsFromCSV();
 
 d3.xml("floreplanta.svg").then((floreplanta) => {
     const floreplantaNode = floreplanta.documentElement;
@@ -135,9 +174,18 @@ d3.xml("floreplanta.svg").then((floreplanta) => {
         .attr("cy", d => d.y + (d.hitboxSize * (d.size / 50) * (window.hitboxScaleFactor || 1.0))/2)
         .attr("r", d => d.repulsionRadius);
     
+    // Atualizar quadtree após calcular os tamanhos
+    quadtree = createQuadtree(points);
+    
     // Atualizar posição e tamanho das hitboxes
     updateHitboxes();
 });
+
+// Função para atualizar a posição das vitórias-régias
+function updateLilies() {
+    liliesGroup.selectAll(".vitoria-regia")
+        .attr("transform", d => `translate(${d.x}, ${d.y}) scale(${d.size / 50})`);
+}
 
 // Função para atualizar a posição e tamanho das hitboxes e raios de repulsão
 function updateHitboxes() {
@@ -175,9 +223,12 @@ const simulation = d3.forceSimulation(points)
             p.y = Math.max(p.size, Math.min(height - p.size, p.y));
         });
 
-        liliesGroup.selectAll(".vitoria-regia")
-            .attr("transform", d => `translate(${d.x}, ${d.y}) scale(${d.size / 50})`);
-            
+        // Atualizar quadtree com novas posições
+        quadtree = createQuadtree(points);
+        
+        // Atualizar posição das vitórias-régias
+        updateLilies();
+        
         // Atualizar posição das hitboxes
         updateHitboxes();
     });
@@ -185,31 +236,63 @@ const simulation = d3.forceSimulation(points)
 let lastMouseX = width / 2;
 let lastMouseY = height / 2;
 
+// Função para encontrar pontos dentro do raio de repulsão usando quadtree
+function findPointsInRadius(x, y, radius) {
+    const pointsInRadius = [];
+    
+    quadtree.visit((node, x1, y1, x2, y2) => {
+        if (!node.length) {
+            // É um nó folha com um ponto
+            let point = node.data;
+            const hitboxWidth = point.hitboxSize * (point.size / 50) * (window.hitboxScaleFactor || 1.0);
+            const hitboxCenterX = point.x + hitboxWidth/2;
+            const hitboxCenterY = point.y + hitboxWidth/2;
+            
+            const dx = hitboxCenterX - x;
+            const dy = hitboxCenterY - y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            
+            if (dist < radius) {
+                pointsInRadius.push({
+                    point: point,
+                    distance: dist,
+                    dx: dx,
+                    dy: dy
+                });
+            }
+        }
+        
+        // Verificar se este nó da árvore pode conter pontos dentro do raio
+        const nodeDistX = x < x1 ? x1 - x : x > x2 ? x - x2 : 0;
+        const nodeDistY = y < y1 ? y1 - y : y > y2 ? y - y2 : 0;
+        const nodeDistSq = nodeDistX * nodeDistX + nodeDistY * nodeDistY;
+        
+        // Se o nó estiver completamente fora do raio, não precisamos visitá-lo
+        return nodeDistSq > radius * radius;
+    });
+    
+    return pointsInRadius;
+}
+
 svg.on("mousemove", function(event) {
     const [mx, my] = d3.pointer(event);
-
-    points.forEach(point => {
-        // Calcular o centro da hitbox
-        const hitboxWidth = point.hitboxSize * (point.size / 50) * (window.hitboxScaleFactor || 1.0);
-        const hitboxCenterX = point.x + hitboxWidth/2;
-        const hitboxCenterY = point.y + hitboxWidth/2;
-        
-        // Calcular distância do mouse ao centro da hitbox
-        const dx = hitboxCenterX - mx;
-        const dy = hitboxCenterY - my;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
+    
+    // Usar quadtree para encontrar pontos próximos
+    const maxRepulsionRadius = Math.max(...points.map(p => p.repulsionRadius * (window.hitboxScaleFactor || 1.0)));
+    const pointsToCheck = findPointsInRadius(mx, my, maxRepulsionRadius);
+    
+    pointsToCheck.forEach(({ point, distance, dx, dy }) => {
         // Repulsão gradual com base na distância
         const repulsionRadius = point.repulsionRadius * (window.hitboxScaleFactor || 1.0);
         
-        if (dist < repulsionRadius) {
-            // Verificação de hitbox
+        if (distance < repulsionRadius) {
+            // Calcular a hitbox
+            const hitboxWidth = point.hitboxSize * (point.size / 50) * (window.hitboxScaleFactor || 1.0);
             const isInsideHitbox = mx >= point.x && mx <= point.x + hitboxWidth && 
-                                   my >= point.y && my <= point.y + hitboxWidth;
+                                 my >= point.y && my <= point.y + hitboxWidth;
             
             // Calcular o fator de repulsão baseado na proximidade
-            // Quanto mais próximo do centro, mais forte a repulsão
-            const repulsionFactor = 1 - (dist / repulsionRadius);
+            const repulsionFactor = 1 - (distance / repulsionRadius);
             const angle = Math.atan2(dy, dx);
             
             // Força base
@@ -322,6 +405,43 @@ function drawArc(arcX, arcY, x1, y1, x2, y2) {
         .on("end", () => arc.remove());
 }
 
+// Botão para salvar posições atuais em CSV
+const saveButton = d3.select("body")
+    .append("button")
+    .style("position", "fixed")
+    .style("top", "10px")
+    .style("right", "10px")
+    .style("z-index", "1000")
+    .style("padding", "5px")
+    .text("Salvar Posições")
+    .on("click", function() {
+        savePositionsToCSV();
+    });
+
+// Função para salvar posições em CSV
+function savePositionsToCSV() {
+    // Normalizar posições para valores entre 0-1 para portabilidade
+    const csvData = points.map(p => ({
+        x: (p.x / width).toFixed(4),
+        y: (p.y / height).toFixed(4),
+        size: p.size.toFixed(2),
+        id: p.id
+    }));
+    
+    // Converter para string CSV
+    const headers = Object.keys(csvData[0]).join(',');
+    const rows = csvData.map(obj => Object.values(obj).join(','));
+    const csvString = [headers, ...rows].join('\n');
+    
+    // Criar um blob e link para download
+    const blob = new Blob([csvString], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', 'lily_positions.csv');
+    a.click();
+}
+
 // Adicionar controle para mostrar/ocultar raios de repulsão
 const repulsionToggleButton = d3.select("body")
     .append("button")
@@ -366,6 +486,9 @@ controlsDiv.append("input")
         
         // Atualizar tamanho das hitboxes
         updateHitboxes();
+        
+        // Reconstruir quadtree com novo fator de escala
+        quadtree = createQuadtree(points);
     });
 
 window.hitboxScaleFactor = 1.0; // Fator de escala inicial
@@ -408,3 +531,40 @@ repulsionControlsDiv.append("input")
 
 repulsionControlsDiv.append("span")
     .text("2.5");
+
+// Mostrar quadtree (opcional, para debug)
+const debugQuadtreeButton = d3.select("body")
+    .append("button")
+    .style("position", "fixed")
+    .style("top", "10px")
+    .style("left", "350px")
+    .style("z-index", "1000")
+    .style("padding", "5px")
+    .text("Mostrar Quadtree")
+    .on("click", function() {
+        const showingQuadtree = svg.select(".quadtree-debug").size() > 0;
+        
+        if (showingQuadtree) {
+            svg.select(".quadtree-debug").remove();
+            d3.select(this).text("Mostrar Quadtree");
+        } else {
+            // Desenhar linhas do quadtree
+            const quadtreeGroup = svg.append("g")
+                .attr("class", "quadtree-debug");
+                
+            quadtree.visit(function(node, x1, y1, x2, y2) {
+                quadtreeGroup.append("rect")
+                    .attr("x", x1)
+                    .attr("y", y1)
+                    .attr("width", x2 - x1)
+                    .attr("height", y2 - y1)
+                    .attr("fill", "none")
+                    .attr("stroke", "rgba(0, 0, 0, 0.3)")
+                    .attr("stroke-width", 1);
+                
+                return false; // continue traversing
+            });
+            
+            d3.select(this).text("Ocultar Quadtree");
+        }
+    });
