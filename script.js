@@ -10,10 +10,12 @@ const svg = d3.select("body")
 
 const liliesGroup = svg.append("g").attr("class", "lilies-group");
 const effectsGroup = svg.append("g").attr("class", "effects-group");
-const hitboxGroup = svg.append("g").attr("class", "hitbox-group");
+const hitboxGroup = svg.append("g")
+    .attr("class", "hitbox-group")
+    .style("visibility", "hidden");
 
 // Controle de toggle para hitboxes
-let showHitboxes = true;
+let showHitboxes = false;
 const toggleButton = d3.select("body")
     .append("button")
     .style("position", "fixed")
@@ -21,7 +23,7 @@ const toggleButton = d3.select("body")
     .style("left", "10px")
     .style("z-index", "1000")
     .style("padding", "5px")
-    .text("Ocultar Hitboxes")
+    .text("Mostrar Hitboxes") 
     .on("click", function() {
         showHitboxes = !showHitboxes;
         hitboxGroup.style("visibility", showHitboxes ? "visible" : "hidden");
@@ -159,7 +161,7 @@ d3.xml("floreplanta.svg").then((floreplanta) => {
         .attr("stroke-dasharray", "5,5")
         .attr("stroke-width", 2);
     
-    // Visualização opcional do raio de repulsão
+    // Visualização do raio de repulsão
     hitboxGroup.selectAll(".repulsion-radius")
         .data(points)
         .enter()
@@ -317,7 +319,7 @@ svg.on("mousemove", function(event) {
             point.vx += force * Math.cos(angle) * 0.1;
             point.vy += force * Math.sin(angle) * 0.1;
             
-            // Efeito visual para o raio de repulsão (opcional)
+            // Efeito visual para o raio de repulsão 
             if (repulsionFactor > 0.1) {
                 hitboxGroup.select(`.repulsion-radius[data-id="${point.id}"]`)
                     .attr("stroke", `rgba(0, 255, 255, ${repulsionFactor * 0.5})`)
@@ -450,12 +452,14 @@ const repulsionToggleButton = d3.select("body")
     .style("left", "150px")
     .style("z-index", "1000")
     .style("padding", "5px")
-    .text("Ocultar Raios de Repulsão")
+    .text("Mostrar Raios de Repulsão") 
     .on("click", function() {
         const repulsionVisible = hitboxGroup.selectAll(".repulsion-radius").style("visibility") !== "hidden";
         hitboxGroup.selectAll(".repulsion-radius").style("visibility", repulsionVisible ? "hidden" : "visible");
         d3.select(this).text(repulsionVisible ? "Mostrar Raios de Repulsão" : "Ocultar Raios de Repulsão");
     });
+
+hitboxGroup.selectAll(".repulsion-radius").style("visibility", "hidden");
 
 // Controle deslizante para ajuste da escala da hitbox
 const controlsDiv = d3.select("body")
@@ -532,7 +536,7 @@ repulsionControlsDiv.append("input")
 repulsionControlsDiv.append("span")
     .text("2.5");
 
-// Mostrar quadtree (opcional, para debug)
+// Mostrar quadtree 
 const debugQuadtreeButton = d3.select("body")
     .append("button")
     .style("position", "fixed")
@@ -562,7 +566,7 @@ const debugQuadtreeButton = d3.select("body")
                     .attr("stroke", "rgba(0, 0, 0, 0.3)")
                     .attr("stroke-width", 1);
                 
-                return false; // continue traversing
+                return false; 
             });
             
             d3.select(this).text("Ocultar Quadtree");
