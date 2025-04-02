@@ -101,7 +101,7 @@ function loadPositionsFromCSV() {
             if (i < points.length) {
                 points[i].x = +d.x * width;  // Converter para número e escalar para a largura da janela
                 points[i].y = +d.y * height; // Converter para número e escalar para a altura da janela
-                points[i].size = +d.size || (20 + Math.random() * 10); // Usar o tamanho do CSV ou gerar um
+                points[i].size = +d.size; // Usar o tamanho do CSV ou gerar um
             }
         });
         
