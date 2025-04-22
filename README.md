@@ -98,3 +98,5 @@ Características do sistema de zoom:
 
 ## Conclusão
 O projeto "Lírios d'Água" demonstra uso avançado de D3.js para criar uma experiência interativa através de técnicas como Quadtree para otimização espacial, transições animadas para feedback visual, e um sistema de zoom para exploração do ambiente. O código implementa um sistema de física simplificado que, combinado com detecção de colisões, cria uma simulação orgânica de um ecossistema aquático respondendo à presença do usuário.
+
+Para acessar o projeto desenvolvido acesse: https://elgennenif.github.io/Lirio-d-agua/
